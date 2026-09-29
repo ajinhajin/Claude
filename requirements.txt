@@ -1,0 +1,7 @@
+fonttools>=4.40
+opencv-python-headless>=4.8
+pillow>=10.0
+numpy>=1.24
+potracer>=0.0.4
+brotli>=1.0          # optional: .woff2 output
+# pymupdf            # optional: read scanned PDF files directly
