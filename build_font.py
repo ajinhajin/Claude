@@ -18,6 +18,7 @@ from handfont.scan import load_overrides, scan_files
 from handfont.vectorize import trace
 
 PREVIEW_TEXT = [
+    "안녕하세요. 오늘 날씨가 정말 좋네요!",
     "다람쥐 헌 쳇바퀴에 타고파",
     "키스의 고유조건은 입술끼리 만나야 하고 특별한 기술은 필요치 않다.",
     "The quick brown fox jumps over the lazy dog.",
@@ -59,6 +60,8 @@ def main():
     ap.add_argument("--hangul-width", type=int, default=1000, help="한글 글자 폭 (기본 1000)")
     ap.add_argument("--space", type=int, default=280, help="띄어쓰기 폭 (기본 280)")
     ap.add_argument("--overrides", help="수정용 이미지 폴더(<글리프이름>.png 으로 개별 칸 교체)")
+    ap.add_argument("--hangul-mode", choices=["auto", "jamo", "syllable"], default="auto",
+                    help="한글 칸에 자모만 썼는지(jamo), 글자 전체를 썼는지(syllable). 기본은 자동 판정")
     ap.add_argument("--jobs", type=int, default=os.cpu_count(), help="병렬 처리 개수")
     args = ap.parse_args()
 
@@ -67,7 +70,8 @@ def main():
     t0 = time.time()
 
     print("1) 스캔 이미지 인식")
-    cells, _, presets = scan_files(args.scans, args.threshold, args.weight, debug_dir=cells_dir)
+    cells, _, presets = scan_files(args.scans, args.threshold, args.weight, debug_dir=cells_dir,
+                                   hangul_mode=args.hangul_mode)
     overrides = load_overrides(args.overrides, args.threshold)
     if overrides:
         print(f"  수정 이미지 {len(overrides)}개 적용")

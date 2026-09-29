@@ -17,7 +17,7 @@ def load_images(path):
     """Return a list of grayscale uint8 arrays (PDF files may hold several pages)."""
     if path.lower().endswith(".pdf"):
         try:
-            import fitz  # PyMuPDF
+            import pymupdf as fitz
         except ImportError:
             raise SystemExit("PDF 스캔을 읽으려면 `pip install pymupdf` 가 필요합니다. "
                              "(또는 PNG/JPG로 저장해서 넣어주세요)")
@@ -133,9 +133,59 @@ def extract_cell(page, pc, threshold=0.55, weight=0, min_blob=40):
     return ink.astype(bool)
 
 
-def scan_files(paths, threshold=0.55, weight=0, debug_dir=None, log=print):
-    """Scan all files. Returns {glyph_name: ink_mask}, {glyph_name: set_key}, preset."""
+def _target(pc):
+    from .segment import CHO, JONG, JUNG
+    return {"cho": CHO, "jung": JUNG, "jong": JONG}[pc.set_key.split(".")[0]]
+
+
+def split_hangul(raw, mode="auto", debug_dir=None, log=print):
+    """Reduce Hangul cells to the one jamo each is for.
+
+    ``raw`` maps glyph name -> (ink, placed cell).  People fill the whole
+    template the same way, so in "auto" mode every cell votes on whether
+    whole syllables were written and the majority decides for all of them.
+    """
+    from .charset import syllable_name
+    from .segment import colorize, normalize_syllable, split_jamo, syllable_score
+    out = {}
+    jamo_cells = {n: v for n, v in raw.items() if v[1].set_key != "syl"}
+
+    # whole syllables from the "common" template are used as written
+    for name, (ink, pc) in raw.items():
+        if pc.set_key == "syl":
+            out[name] = normalize_syllable(ink, pc.cell.guide)
+
+    if jamo_cells and mode == "auto":
+        votes = [syllable_score(ink, pc.cell.guide, _target(pc)) > 0
+                 for ink, pc in jamo_cells.values()]
+        mode = "syllable" if sum(votes) * 2 > len(votes) else "jamo"
+        if mode == "syllable":
+            log(f"  한글 칸에 글자 전체가 쓰여 있어 자모만 분리합니다 ({sum(votes)}/{len(votes)}칸 판정)")
+    if mode == "jamo":
+        out.update({name: ink for name, (ink, _) in jamo_cells.items()})
+        return out
+
+    for name, (ink, pc) in jamo_cells.items():
+        part, _ = split_jamo(ink, pc.cell.guide, _target(pc))
+        if debug_dir:
+            d = os.path.join(debug_dir, "_split")
+            os.makedirs(d, exist_ok=True)
+            cv2.imwrite(os.path.join(d, f"{name}.png"), colorize(ink, pc.cell.guide))
+        if np.count_nonzero(part) < 60 * UPSCALE * UPSCALE:
+            log(f"  ! {pc.cell.label} ({pc.cell.guide}) 칸에서 자모를 분리하지 못했습니다: {name}")
+        else:
+            out[name] = part
+        # the syllable itself was written too – keep it as a finished glyph
+        whole = syllable_name(pc.cell.guide)
+        if whole not in out:
+            out[whole] = normalize_syllable(ink, pc.cell.guide)
+    return out
+
+
+def scan_files(paths, threshold=0.55, weight=0, debug_dir=None, hangul_mode="auto", log=print):
+    """Scan all files. Returns {glyph_name: ink_mask}, {glyph_name: set_key}, presets."""
     cells, sets, presets = {}, {}, set()
+    hangul = {}
     pages_cache = {}
     for path in paths:
         for n, gray in enumerate(load_images(path)):
@@ -157,19 +207,24 @@ def scan_files(paths, threshold=0.55, weight=0, debug_dir=None, log=print):
                 ink = extract_cell(page, pc, threshold, weight)
                 if ink is None:
                     continue
-                cells[pc.cell.name] = ink
+                if pc.cell.kind == "hangul":
+                    hangul[pc.cell.name] = (ink, pc)
+                else:
+                    cells[pc.cell.name] = ink
                 sets[pc.cell.name] = pc.set_key
                 found += 1
-                if debug_dir:
-                    os.makedirs(debug_dir, exist_ok=True)
-                    cv2.imwrite(os.path.join(debug_dir, f"{pc.cell.name}.png"),
-                                np.where(ink, 0, 255).astype(np.uint8))
             log(f"  ✓ {src}: {preset} {index + 1}/{len(layout_pages)} 페이지, "
                 f"{found}/{len(layout_pages[index].cells)} 칸 인식")
             if debug_dir:
                 os.makedirs(debug_dir, exist_ok=True)
                 cv2.imwrite(os.path.join(debug_dir, f"_page_{preset}_{index + 1}.jpg"),
                             (page * 255).astype(np.uint8), [cv2.IMWRITE_JPEG_QUALITY, 70])
+
+    cells.update(split_hangul(hangul, hangul_mode, debug_dir, log))
+    if debug_dir:
+        os.makedirs(debug_dir, exist_ok=True)
+        for name, ink in cells.items():
+            cv2.imwrite(os.path.join(debug_dir, f"{name}.png"), np.where(ink, 0, 255).astype(np.uint8))
     return cells, sets, presets
 
 

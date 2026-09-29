@@ -139,14 +139,43 @@ def latin_sets():
     ]
 
 
+# The most frequent syllables that the jamo templates do not already contain
+# as a guide, most frequent first.  Counted over the NSMC movie-review corpus
+# (everyday language) and the KoNLPy law/bill corpora (formal language),
+# weighted equally.  Together with the 183 guide syllables of the "full"
+# template they make up about 92% of running Korean text.
+COMMON_SYLLABLES = (
+    "지기영는정리대수시서전재장스상주성제진동김무미신구을니국게용부그문해경선들박공일"
+    "최데중비임현내면점순회없거남학계세음생있말명식종드업개치네교배작석민권금를방양건"
+    "분체희송적태준실병심너근평트형규좋복홍행었황역레르물길천력통발철터래승창프설광입"
+    "봉것법출옥더러당봤히직매품독두저디했백할술런루숙덕군랑밌표류려되때열습합청함불추"
+    "속결섭크범않던처았허편후별악알잘년람질급집목육버춘훈느망필변채택못걸막피증절삼쓰"
+    "헌극울볼흥름능살달족듯등겠귀억향투특메협균책약번든항충린참싶격효액션익엄웅키록혁"
+    "많활냥담립티좀뭐줄림님료였렇웃왕브테쟁즈끝월긴냐곽머례련득령락된축량염잼욱눈베혜"
+)
+
+
+def syllable_name(ch: str) -> str:
+    return f"syl{ord(ch):04X}"
+
+
+def _syllable_set() -> CellSet:
+    s = CellSet("syl", "자주 쓰는 글자")
+    for ch in COMMON_SYLLABLES:
+        s.cells.append(Cell(syllable_name(ch), ch, "hangul", guide=ch))
+    return s
+
+
 # Template presets.  "quick" asks only for the no-받침 variants; the
-# with-받침 variants are then derived automatically by squashing.
+# with-받침 variants are then derived automatically.  "common" holds whole
+# syllables that are used as written instead of being composed.
 PRESETS = {
     "full": ["cho.V0", "cho.V1", "cho.H0", "cho.H1", "cho.C0", "cho.C1",
              "jung.0", "jung.1", "jong"],
     "quick": ["cho.V0", "cho.H0", "cho.C0", "jung.0", "jong"],
+    "common": ["syl"],
 }
-PRESET_IDS = {"full": 0, "quick": 1}
+PRESET_IDS = {"full": 0, "quick": 1, "common": 2}
 
 
 def hangul_set(key: str) -> CellSet:
@@ -156,8 +185,11 @@ def hangul_set(key: str) -> CellSet:
         return _jung_set(key[5:])
     if key == "jong":
         return _jong_set()
+    if key == "syl":
+        return _syllable_set()
     raise KeyError(key)
 
 
 def preset_sets(preset: str):
-    return latin_sets() + [hangul_set(k) for k in PRESETS[preset]]
+    latin = latin_sets() if preset != "common" else []
+    return latin + [hangul_set(k) for k in PRESETS[preset]]

@@ -16,7 +16,9 @@ FID_CENTERS = [(165, 165), (PAGE_W - 165, 165),
                (165, PAGE_H - 165), (PAGE_W - 165, PAGE_H - 165)]  # tl, tr, bl, br
 
 # Page id: a row of small squares between the top marks.
-#   bit0 = 1 (guard), bit1 = preset id, bit2..6 = page index, bit7 = 0 (guard)
+#   bit0 = 1 (guard), bit1..3 = preset id (low bit first), bit4..6 = page
+#   index, bit7 = 0 (guard).  The first templates used bit2..6 for the page;
+#   they never had more than 8 pages, so they decode the same way.
 BIT_SIZE = 36
 BIT_COUNT = 8
 BIT_Y = 165
@@ -27,17 +29,16 @@ def bit_centers():
 
 
 def encode_bits(preset_id: int, page: int):
-    bits = [1, preset_id & 1] + [(page >> (4 - i)) & 1 for i in range(5)] + [0]
-    return bits
+    assert 0 <= preset_id < 8 and 0 <= page < 8
+    return ([1] + [(preset_id >> i) & 1 for i in range(3)]
+            + [(page >> (2 - i)) & 1 for i in range(3)] + [0])
 
 
 def decode_bits(bits):
     if bits[0] != 1 or bits[-1] != 0:
         return None
-    preset_id = bits[1]
-    page = 0
-    for b in bits[2:7]:
-        page = (page << 1) | b
+    preset_id = bits[1] | bits[2] << 1 | bits[3] << 2
+    page = bits[4] << 2 | bits[5] << 1 | bits[6]
     return preset_id, page
 
 

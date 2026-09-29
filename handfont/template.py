@@ -13,7 +13,13 @@ GUIDE_GRAY = 222     # light enough to be removed by the scanner
 LINE_GRAY = 200
 BORDER_GRAY = 150
 
+# Bundled copy of the guide font (SIL OFL 1.1). The scanner re-renders the
+# guide syllables with it, so it must match what the templates were drawn with.
+GUIDE_FONT = os.path.join(os.path.dirname(__file__), "fonts", "NanumGothic.ttf")
+GUIDE_SIZE = int(L.CELL * 0.86)
+
 _FONT_CANDIDATES = [
+    GUIDE_FONT,
     # Linux
     "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",
     "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
@@ -64,7 +70,7 @@ def render_page(page, font_path):
     f_head = ImageFont.truetype(font_path, 40)
     f_small = ImageFont.truetype(font_path, 28)
     f_label = ImageFont.truetype(font_path, 36)
-    f_guide = ImageFont.truetype(font_path, int(L.CELL * 0.86))
+    f_guide = ImageFont.truetype(GUIDE_FONT, GUIDE_SIZE)
 
     head = f"손글씨 폰트 템플릿 ({page.preset})  ·  {page.index + 1} / {page.total} 페이지"
     d.text((L.GRID_X0, 250), head, font=f_head, fill=0)
@@ -79,7 +85,7 @@ def render_page(page, font_path):
         # U+005C is drawn as ₩ by most Korean fonts, so it gets its name only.
         if c.label != "\\":
             d.text((x + 6, y - 8), c.label, font=f_label, fill=0, anchor="ls")
-        if c.guide:
+        if c.guide and c.guide != c.label:
             d.text((x + L.CELL - 6, y - 10), c.guide, font=f_small, fill=120, anchor="rs")
 
         # guides

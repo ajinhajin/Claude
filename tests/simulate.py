@@ -55,14 +55,16 @@ def fill_page(img, page, pen_path):
             patch = np.array(tmp)
         else:
             key = pc.set_key
-            if key.startswith("cho."):
+            if key == "syl":
+                region = (.08, .08, .92, .92)
+            elif key.startswith("cho."):
                 region = CHO_REGION[key[4:]]
             elif key.startswith("jung."):
                 v = JUNG.index(c.label)
                 region = JUNG_REGION[(vowel_class(v), key[5:])]
             else:
                 region = JONG_REGION
-            glyph = _ink(c.label, big)
+            glyph = _ink(c.guide if key == "syl" else c.label, big)
             x0, y0, x1, y1 = (int(r * S) for r in region)
             glyph = cv2.resize(glyph, (x1 - x0, y1 - y0), interpolation=cv2.INTER_AREA)
             patch = np.full((S, S), 255, np.uint8)

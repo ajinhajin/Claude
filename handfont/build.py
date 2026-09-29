@@ -22,6 +22,10 @@ CHO_FALLBACK = {"V0": ["V1"], "V1": ["V0"], "H0": ["C0", "H1"], "H1": ["C1", "H0
                 "C0": ["H0", "C1"], "C1": ["H1", "C0"]}
 JUNG_FALLBACK = {"0": ["1"], "1": ["0"]}
 
+# vertical vowels whose leftmost stroke is the stem: ㅏ ㅐ ㅑ ㅒ ㅣ
+STEM_FIRST = {JUNG.index(c) for c in "ㅏㅐㅑㅒㅣ"}
+I_VOWEL = JUNG.index("ㅣ")
+
 
 def _bounds(rec):
     bp = BoundsPen(None)
@@ -163,13 +167,36 @@ def build_font(outlines, out_path, family="MyHandwriting", family_ko=None,
         jamo += 1
 
     # --- Hangul syllables (composites) ------------------------------------
-    syllables = 0
+    syllables = handwritten = 0
     missing_parts = set()
+    # The initials of the ㅏ-type set were written next to ㅏ.  Vowels whose
+    # leftmost stroke is also a stem (ㅣ, ㅐ …) may have been written further
+    # right, which leaves a hole between initial and vowel (기 looking like
+    # ㄱ ㅣ).  Pull those vowels in to the gap measured for ㅏ.
+    gap_target = {}
+    for fin in "01":
+        a = jung_name(JUNG.index("ㅏ"), fin)
+        gaps = sorted(bounds[a][0] - bounds[cho_name(l, "V" + fin)][2]
+                      for l in range(len(CHO)) if a in bounds and cho_name(l, "V" + fin) in bounds)
+        gap_target[fin] = gaps[len(gaps) // 2] if gaps else None
     for l in range(19):
         for v in range(21):
             cls = vowel_class(v)
             for t in range(28):
                 fin = "1" if t else "0"
+                code = 0xAC00 + (l * 21 + v) * 28 + t
+                gname = f"uni{code:04X}"
+                own = outlines.get(f"syl{code:04X}")
+                if own is not None and _bounds(own):
+                    # written by hand as a whole syllable: use it as is
+                    b = _bounds(own)
+                    dx = hangul_advance / 2 - (b[0] + b[2]) / 2
+                    glyphs[gname] = _tt_glyph(_transformed(own, (1, 0, 0, 1, dx, 0)))
+                    metrics[gname] = (hangul_advance, 0)
+                    cmap[code] = gname
+                    syllables += 1
+                    handwritten += 1
+                    continue
                 parts = [
                     _pick(bounds, lambda x: cho_name(l, x), cls + fin, CHO_FALLBACK),
                     _pick(bounds, lambda x: jung_name(v, x), fin, JUNG_FALLBACK),
@@ -184,20 +211,26 @@ def build_font(outlines, out_path, family="MyHandwriting", family_ko=None,
                     if t and parts[-1] is None:
                         missing_parts.add(f"종성 {JONG[t - 1]}")
                     continue
-                x0 = min(bounds[p][0] for p in parts)
-                x1 = max(bounds[p][2] for p in parts)
-                dx = int(round(hangul_advance / 2 - (x0 + x1) / 2))
+                shifts = [0] * len(parts)
+                if cls == "V" and v in STEM_FIRST and gap_target[fin] is not None:
+                    # a bare ㅣ has no bar reaching back, so the same gap reads wider
+                    want = gap_target[fin] * (0.5 if v == I_VOWEL else 1)
+                    gap = bounds[parts[1]][0] - bounds[parts[0]][2]
+                    if gap > want:
+                        shifts[1] = want - gap
+                x0 = min(bounds[p][0] + s for p, s in zip(parts, shifts))
+                x1 = max(bounds[p][2] + s for p, s in zip(parts, shifts))
+                dx = hangul_advance / 2 - (x0 + x1) / 2
                 pen = TTGlyphPen(glyphs)
-                for p in parts:
-                    pen.addComponent(p, (1, 0, 0, 1, dx, 0))
-                code = 0xAC00 + (l * 21 + v) * 28 + t
-                gname = f"uni{code:04X}"
+                for p, s in zip(parts, shifts):
+                    pen.addComponent(p, (1, 0, 0, 1, int(round(dx + s)), 0))
                 glyphs[gname] = pen.glyph()
                 metrics[gname] = (hangul_advance, 0)
                 cmap[code] = gname
                 syllables += 1
 
-    log(f"  영문·숫자·기호 {latin}자, 한글 자모 {jamo}자, 한글 음절 {syllables}/11172자")
+    log(f"  영문·숫자·기호 {latin}자, 한글 자모 {jamo}자, 한글 음절 {syllables}/11172자"
+        f" (직접 쓴 글자 {handwritten}자, 나머지는 자모 조합)")
     if missing_parts:
         log("  ! 빠진 자모 때문에 만들지 못한 음절이 있습니다: " + ", ".join(sorted(missing_parts)))
 
